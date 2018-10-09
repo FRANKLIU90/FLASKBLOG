@@ -1,8 +1,12 @@
+import secrets
+import os
+from PIL import Image
 from flaskblog import app, bcrypt, db
 from flask import render_template, url_for, flash, redirect, request
-from flaskblog.forms import RegistrationForm, LoginForm
+from flaskblog.forms import RegistrationForm, LoginForm, UpdateInfoForm
 from .models import User
 from flask_login import login_user, current_user, logout_user, login_required
+
 
 posts = [
     {
@@ -74,7 +78,35 @@ def logout():
 #     return render_template('account.html', title="account")
 
 
-@app.route("/account")
+def save_picture(form_picture_data):
+    hex_name = secrets.token_hex(8)
+    _, file_ext = os.path.splitext(form_picture_data.filename)
+    # file_name = hex_name + file_ext
+    file_name = os.path.join(hex_name, file_ext)
+    size = (125, 125)
+    image = Image.open(form_picture_data)
+    image.thumbnail(size)
+    path = os.path.join(app.root_path, 'static/profile_image', file_name)
+    image.save(path)
+    return file_name
+
+
+@app.route("/account", methods=['POST', 'GET'])
 @login_required
 def account():
-    return render_template('account.html', title="account")
+    form = UpdateInfoForm()
+    if request.method == "GET":
+        form.username.data = current_user.username
+        form.email.data = current_user.email
+    if form.validate_on_submit():
+        current_user.username = form.username.data
+        current_user.email = form.email.data
+        if form.image_file.data:
+            image_name = save_picture(form.image_file.data)
+            current_user.profile_image = image_name
+        db.session.commit()
+
+        return redirect(url_for('account'))
+
+    picture_file = url_for('static', filename=f'profile_image/{current_user.profile_image}')
+    return render_template('account.html', title="account", picture_file=picture_file, form=form)
