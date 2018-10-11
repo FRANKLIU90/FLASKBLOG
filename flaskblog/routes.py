@@ -2,31 +2,16 @@ import secrets
 import os
 from PIL import Image
 from flaskblog import app, bcrypt, db
-from flask import render_template, url_for, flash, redirect, request
-from flaskblog.forms import RegistrationForm, LoginForm, UpdateInfoForm
-from .models import User
+from flask import render_template, url_for, flash, redirect, request, abort
+from flaskblog.forms import RegistrationForm, LoginForm, UpdateInfoForm, PostForm
+from .models import User, Post
 from flask_login import login_user, current_user, logout_user, login_required
-
-
-posts = [
-    {
-        'author': 'Corey Schafer',
-        'title': 'Blog Post 1',
-        'content': 'First post content',
-        'date_posted': 'April 20, 2018'
-    },
-    {
-        'author': 'Jane Doe',
-        'title': 'Blog Post 2',
-        'content': 'Second post content',
-        'date_posted': 'April 21, 2018'
-    }
-]
 
 
 @app.route("/")
 @app.route("/home")
 def home():
+    posts = Post.query.all()
     return render_template('home.html', posts=posts)
 
 
@@ -110,3 +95,51 @@ def account():
 
     picture_file = url_for('static', filename=f'profile_image/{current_user.profile_image}')
     return render_template('account.html', title="account", picture_file=picture_file, form=form)
+
+
+@app.route("/post/new", methods=['POST', 'GET'])
+@login_required
+def new_post():
+    form = PostForm()
+    if form.validate_on_submit():
+        post = Post(title=form.title.data, content=form.content.data, author=current_user)
+        db.session.add(post)
+        db.session.commit()
+        return redirect('home')
+    return render_template('new_post.html', form=form)
+
+
+@app.route("/post/<int:post_id>")
+def post_detail(post_id):
+    post = Post.query.get_or_404(post_id)
+    return render_template('post_detail.html', post=post)
+
+
+@app.route("/post/<int:post_id>/update", methods=['POST', "GET"])
+@login_required
+def update_post(post_id):
+    post = Post.query.get_or_404(post_id)
+    if current_user != post.author:
+        return abort(403)
+    form = PostForm()
+    if form.validate_on_submit():
+        post.title = form.title.data
+        post.content = form.content.data
+        db.session.commit()
+        flash('your updated your post', 'success')
+        return redirect(url_for('post_detail', post_id=post.id))
+    elif request.method == 'GET':
+        form.title.data = post.title
+        form.content.data = post.content
+    return render_template('new_post.html', post=post, form=form)
+
+
+@app.route("/post/<int:post_id>/delete", methods=['POST'])
+@login_required
+def delete_post(post_id):
+    post = Post.query.get_or_404(post_id)
+    if current_user != post.author:
+        return abort(403)
+    db.session.delete(post)
+    db.session.commit()
+    return redirect(url_for('home'))
